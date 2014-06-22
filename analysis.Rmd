@@ -1,0 +1,75 @@
+# Practical Machine Learning Project - Human Activity Recognition
+
+## Synopsis
+Using devices such as _Jawbone Up_, _Nike FuelBand_, and _Fitbit_ it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how _much_ of a particular activity they do, but they rarely quantify _how well they do it_. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+Data was download from the Coursera web site. The goal of this project was to predict the manner in which the 6 participants did the exercise. This was the "classe" variable in the training set. We used a random forest model for prediction. Data was inspected for anomalies and recoded where necessary. Plots were made to answer our research question. Analysis was performed with R version 3.0.3 software and RStudio version 0.98.507 software.
+
+## Data Processing
+The training data set was downloaded from the Coursera web site and saved to the PC. The 'caret' and 'randomForest' package were used to create a randomForest model used for predicting the manner in which the 6 participants did the exercise. Please install and load the 'caret' and 'randomForest' packages if this was not done already. Data was then processed for analysis.
+```{r echo = TRUE}
+## Set seed for 'random' parts of analysis
+set.seed(2048)
+## Load 'caret' and 'randomForest' package.
+library(caret)
+library(randomForest)
+
+## Make sure knitr is able to read / download files from the Internet and 
+## download the training data
+setInternet2(TRUE)
+URL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+rawData <- read.csv(URL, header = TRUE, na.strings = "NA", stringsAsFactors = FALSE)
+```
+
+Once the data set was (down)loaded, we cleaned the raw data by removing all columns comprising of only NA values. The "classe" values were converted to factors. Next, a training data set, a testing data set, and a validation data set were created comprising of 60%, 20%, and 20% of the cleaned data, respectively.
+```{r echo = TRUE}
+## Inspect raw data set
+summary(rawData)
+
+## Remove all columns comprising of only NA values
+NACols <- apply(rawData, 2, function(x) {sum(is.na(x))})
+cleanedData <- rawData[, which(NACols == 0)]
+cleanedData$classe <- as.factor(cleanedData$classe)
+
+## Create training data set (60% of cleaned data set)
+inTrain <- createDataPartition(y = cleanedData$classe, p = 0.6, list = FALSE)
+trainData <- cleanedData[inTrain, ]
+
+## Create testing data set and validation data set (both 20% of cleaned data set [50% of 40% = 20%])
+testvalidationData <- cleanedData[-inTrain, ]
+inTest <- createDataPartition(y = testvalidationData$classe, p = 0.5, list = FALSE)
+testData <- testvalidationData[inTest, ]
+validationData <- testvalidationData[-inTest, ]
+```
+
+
+From the data set we removed some of the columns that could be predictors. Reasons for removing those predictors were:
+* When the variable doesn't appear to be a sensor reading. The goal of HAR (human activity recognition) studies is to predict activities using sensors.
+* When it’s unclear how a variable is measured, and when a variable is related to the sequence of the experiments.
+* A person's id/name is not a sensor measurement.
+* Time should not impact the weight lifting activities, unless fatigue at late hours is an issue.
+
+With the training data set we constructed a random forest model with 10-fold cross-validation as resampling method. The model was used to predict on the testing set and on the validation set. In-sample and out-of-sample error were calculated.
+```{r echo = TRUE}
+removeIndex <- grep("X|user_name|timestamp|new_window|kurtosis|skewness|max|min|amplitude", names(trainData))
+trainData <- trainData[, -removeIndex]
+
+## Make model
+modelFit <- train(classe ~ ., data = trainData, method = "rf", trControl = trainControl(method = "cv", number = 10))
+
+predictionTest <- predict(modelFit, newdata = testData)
+
+predictionValidation <- predict(modelFit, newdata = validationData)
+```
+
+## Results
+```{r echo = TRUE}
+modelFit
+
+(matrixTest <- confusionMatrix(data = predictionTest, testData$classe))
+(matrixValidation <- confusionMatrix(data = predictionValidation, validationData$classe))
+
+(inSampleError <- 1 - max(modelFit$results[, 2]))
+(outSampleError <- 1 - matrixValidation$overall[1])
+```
+Fifty-three predictors and 11,776 samples were used to construct the random forest. The accuracy of the best fitted model was `r max(modelFit$results[, 2])` +/- `r modelFit$results[modelFit$results[, 2] == max(modelFit$results[, 2]), 4]`. The accuracy of the model on the testing set and the validation set was `r matrixTest$overall[1]` and `r matrixValidation$overall[1]`, respectively. The in-sample error was `r inSampleError` and the out-of-sample error was `r outSampleError`.
